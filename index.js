@@ -41,6 +41,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 });
 
 // 2) Assistant endpoint
+// 2) Assistant endpoint (streaming)
 app.post("/api/assistant", async (req, res) => {
   try {
     const { prompt } = req.body;
@@ -53,15 +54,14 @@ app.post("/api/assistant", async (req, res) => {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini", // super fast
+        model: "gpt-4o-mini",  // fastest
         messages: [{ role: "user", content: prompt }],
         stream: true,
       }),
     });
 
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Transfer-Encoding", "chunked");
 
     const reader = r.body.getReader();
     const decoder = new TextDecoder();
@@ -74,26 +74,25 @@ app.post("/api/assistant", async (req, res) => {
       chunk.split("\n").forEach((line) => {
         if (line.startsWith("data: ")) {
           const data = line.slice(6).trim();
-          if (data === "[DONE]") {
-            res.write("event: done\ndata: end\n\n");
-            res.end();
-            return;
-          }
+          if (data === "[DONE]") return;
           try {
             const parsed = JSON.parse(data);
             const token = parsed.choices?.[0]?.delta?.content;
             if (token) {
-              res.write(`data: ${token}\n\n`);
+              res.write(token); // flush token immediately
             }
           } catch {}
         }
       });
     }
+
+    res.end();
   } catch (err) {
-    console.error(err);
+    console.error("Assistant error:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Backend running on http://localhost:${PORT}`));
