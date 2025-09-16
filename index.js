@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import db from "./firebase.js";  // import db
 
 dotenv.config();
 const app = express();
@@ -92,6 +93,130 @@ app.post("/api/assistant", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
+// Register User
+app.post("/api/register", async (req, res) => {
+  try {
+    const { email, phone, firstname, lastname, password, timer } = req.body;
+
+    if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+
+    const userRef = db.ref("users").child(email.replace(/\./g, "_")); // Firebase keys can't have '.'
+
+    const snapshot = await userRef.get();
+    if (snapshot.exists()) {
+      return res.status(400).json({ error: "User already exists" });
+    }
+
+    const userData = {
+      email,
+      phone,
+      firstname,
+      lastname,
+      password, // ⚠️ in real app hash this before saving
+      timer, // 60, 90, 120
+      disabled: false,
+      isAdmin: false,
+      createdAt: Date.now(),
+    };
+
+    await userRef.set(userData);
+    res.json({ message: "User registered successfully", user: userData });
+  } catch (err) {
+    console.error("Register error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Login User
+app.post("/api/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    console.log("Login attempt for:", email, password);
+    const userRef = db.ref("users").child(email.replace(/\./g, "_"));
+    const snapshot = await userRef.get();
+
+    if (!snapshot.exists()) return res.status(400).json({ error: "User not found" });
+
+    const user = snapshot.val();
+
+    if (user.disabled) return res.status(403).json({ error: "User is disabled" });
+    if (user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
+
+    // Set expiry
+    const expiryTime = Date.now() + user.timer * 60 * 1000;
+    await userRef.update({ expiryTime });
+
+    res.json({
+      message: "Login successful",
+      name: `${user.firstname} ${user.lastname}`,
+      timer: user.timer,
+      isAdmin: user.isAdmin || false,
+      expiryTime,
+    });
+    // Auto disable after timer expires
+    setTimeout(async () => {
+      if(user.isAdmin == false || !user.isAdmin)
+      await userRef.update({ disabled: true });
+      console.log(`User ${email} disabled after ${user.timer} mins`);
+    }, user.timer * 60 * 1000);
+
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all users
+app.get("/api/users", async (req, res) => {
+  try {
+    const snapshot = await db.ref("users").get();
+    if (!snapshot.exists()) {
+      return res.status(404).json({ error: "No users found" });
+    }
+
+    const users = snapshot.val();
+
+    // Convert object to array with email as id
+    const userList = Object.keys(users).map((key) => ({
+      id: key.replace(/_/g, "."),
+      ...users[key],
+    }));
+
+    res.json({ users: userList });
+  } catch (err) {
+    console.error("Get users error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Disable a user manually (admin action)
+app.post("/api/disable-user", async (req, res) => {
+  try {
+    const { email, disabled } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required" });
+    console.log("Disable user request for:", email);
+    // Firebase keys can't have `.`, so replace with `_`
+    const userRef = db.ref("users").child(email.replace(/\./g, "_"));
+    const snapshot = await userRef.get();
+
+    if (!snapshot.exists()) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    await userRef.update({ disabled: disabled });
+
+    res.json({ success: true, message: `User ${email} status changed successfully` });
+  } catch (err) {
+    console.error("Disable user error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+
 
 
 const PORT = process.env.PORT || 5000;
