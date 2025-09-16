@@ -5,11 +5,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // You need service account JSON file from Firebase console
-import fs from "fs";
+// import fs from "fs";
 
-const serviceAccount = JSON.parse(
-  fs.readFileSync("./serviceAccountKey.json", "utf8")
-);
+// const serviceAccount = JSON.parse(
+//   fs.readFileSync("./serviceAccountKey.json", "utf8")
+// );
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 
 admin.initializeApp({
