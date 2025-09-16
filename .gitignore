@@ -1,3 +1,4 @@
 node_modules
 .env
-distserviceAccountKey.json
+dist
+serviceAccountKey.json
