@@ -61,8 +61,9 @@ app.post("/api/assistant", async (req, res) => {
       }),
     });
 
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Transfer-Encoding", "chunked");
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
     const reader = r.body.getReader();
@@ -81,7 +82,8 @@ app.post("/api/assistant", async (req, res) => {
             const parsed = JSON.parse(data);
             const token = parsed.choices?.[0]?.delta?.content;
             if (token) {
-              res.write(token); // flush token immediately
+              // res.write(token); // flush token immediately
+              res.write(`data: ${token}\n\n`);
             }
           } catch {}
         }
