@@ -63,6 +63,7 @@ app.post("/api/assistant", async (req, res) => {
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Transfer-Encoding", "chunked");
+    res.flushHeaders();
 
     const reader = r.body.getReader();
     const decoder = new TextDecoder();
