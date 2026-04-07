@@ -82,8 +82,7 @@ app.post("/api/assistant", async (req, res) => {
             const parsed = JSON.parse(data);
             const token = parsed.choices?.[0]?.delta?.content;
             if (token) {
-              // res.write(token); // flush token immediately
-              res.write(`data: ${token}\n\n`);
+              res.write(token); // flush token immediately
             }
           } catch {}
         }
