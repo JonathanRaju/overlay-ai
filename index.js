@@ -3,6 +3,13 @@ import multer from 'multer';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import db from "./firebase.js";  // import db
+import path from "path";
+import { fileURLToPath } from "url";
+
+
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 const app = express();
@@ -132,6 +139,45 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
+app.post("/api/v2/register", async (req, res) => {
+  try {
+    const { firstName, lastName, email, phone, password, techStack, experience, projects, role } = req.body;
+
+    if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+
+    const userRef = db.ref("users").child(email.replace(/\./g, "_")); // Firebase keys can't have '.'
+
+    const snapshot = await userRef.get();
+    if (snapshot.exists()) {
+      return res.status(400).json({ error: "User already exists" });
+    }
+    
+    let timer = 2; // default 1 hour
+
+    const userData = {
+      firstName, 
+      lastName, 
+      email, 
+      phone, 
+      password, 
+      techStack, 
+      experience, 
+      projects, 
+      role,
+      timer,
+      disabled: false,
+      isAdmin: false,
+      createdAt: Date.now(),
+    };
+
+    await userRef.set(userData);
+    res.json({ message: "User registered successfully", user: userData });
+  } catch (err) {
+    console.error("Register error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Login User
 app.post("/api/login", async (req, res) => {
   try {
@@ -168,6 +214,49 @@ app.post("/api/login", async (req, res) => {
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/download/:os", (req, res) => {
+  try {
+    const { os } = req.params;
+
+    let filePath = "";
+    let fileName = "";
+
+    if (os === "windows") {
+      filePath = path.join(__dirname, "files", "overlay-ai.exe");
+      fileName = "overlay-ai.exe";
+    } 
+    else if (os === "mac") {
+      filePath = path.join(__dirname, "files", "myapp.dmg");
+      fileName = "myapp.dmg";
+    } 
+    else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OS",
+      });
+    }
+
+    res.download(filePath, fileName, (err) => {
+      if (err) {
+        console.error("Download error:", err);
+
+        return res.status(500).json({
+          success: false,
+          message: "Download failed",
+        });
+      }
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 
