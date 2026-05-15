@@ -203,6 +203,7 @@ app.post("/api/login", async (req, res) => {
       timer: user.timer,
       isAdmin: user.isAdmin || false,
       expiryTime,
+      ...user
     });
     // Auto disable after timer expires
     setTimeout(async () => {
