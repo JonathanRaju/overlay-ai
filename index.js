@@ -440,130 +440,107 @@ app.post("/api/disable-user", async (req, res) => {
   }
 });
 
-app.post("/api/send-otp",
-  async (req, res) => {
+app.post("/api/send-otp", async (req, res) => {
+  try {
+    const { email, name } = req.body;
 
-    try {
-
-      const { email, name } =
-        req.body;
-
-
-      const otp =
-        Math.floor(
-          100000 +
-          Math.random() * 900000
-        ).toString();
-
-
-      // save otp in firebase
-
-      await db
-        .ref("otp")
-        .child(
-          email.replace(/\./g, "_")
-        )
-        .set({
-
-          otp,
-
-          createdAt:
-            Date.now()
-
-        });
-
-
-
-      await resend.emails.send({
-
-        from:
-          "Krack-AI OTP <validate@verify.krack-ai.com>",
-
-        to:
-          email,
-
-        subject:
-          "Your OTP Verification",
-
-        html: `<div style="font-family: Arial, sans-serif; background:#f4f4f4; padding:40px;">
-  <div style="
-      max-width:500px;
-      margin:auto;
-      background:white;
-      padding:30px;
-      border-radius:12px;
-      box-shadow:0 4px 12px rgba(0,0,0,0.1);
-      text-align:center;
-  ">
-    
-    <h2 style="color:#333;">
-      Verify Your Email
-    </h2>
-
-    <p style="color:#666; font-size:16px;">
-      Use the OTP below to complete your verification.
-    </p>
-
-    <div style="
-        font-size:32px;
-        font-weight:bold;
-        letter-spacing:8px;
-        background:#f8f9fa;
-        padding:20px;
-        border-radius:10px;
-        margin:20px 0;
-        color:#ff5f6d;
-    ">
-      ${otp}
-    </div>
-
-    <p style="color:#888;">
-      This OTP will expire in <strong>5 minutes</strong>.
-    </p>
-
-    <p style="font-size:14px;color:#999;margin-top:25px;">
-      If you didn't request this verification, ignore this email.
-    </p>
-
-    <hr style="border:none;border-top:1px solid #eee;margin:25px 0;">
-
-    <p style="font-size:12px;color:#aaa;">
-      © ${new Date().getFullYear()} Your App Name
-    </p>
-
-  </div>
-</div>
-`
-
-      });
-
-
-      res.json({
-
-        success: true,
-
-        message:
-          "OTP sent"
-
-      });
-
-
-    } catch (err) {
-
-      console.log(err);
-
-      res.status(500).json({
-
+    if (!email) {
+      return res.status(400).json({
         success: false,
-
-        message:
-          err.message
-
+        message: "Email required"
       });
-
     }
 
-  });
+    const userKey = email.replace(/\./g, "_");
+
+    // Check existing user
+    const userSnapshot = await db
+      .ref("users")
+      .child(userKey)
+      .get();
+
+    if (userSnapshot.exists()) {
+      return res.status(400).json({
+        success: false,
+        message: "User already exists. Please login."
+      });
+    }
+
+    // Generate OTP
+    const otp = Math.floor(
+      100000 + Math.random() * 900000
+    ).toString();
+
+    // Save OTP
+    await db
+      .ref("otp")
+      .child(userKey)
+      .set({
+        otp,
+        createdAt: Date.now()
+      });
+
+    // Send email
+    await resend.emails.send({
+      from:
+        "Krack-AI OTP <validate@verify.krack-ai.com>",
+
+      to: email,
+
+      subject: "Your OTP Verification Code",
+
+      html: `
+      <div style="font-family:Arial;padding:40px;background:#f4f4f4">
+        <div style="max-width:500px;margin:auto;background:#fff;
+        padding:30px;border-radius:12px;text-align:center">
+
+          <h2>Hello ${name}, Verify Your Email</h2>
+
+          <p>
+            Use the OTP below to complete verification
+          </p>
+
+          <div style="
+            font-size:32px;
+            font-weight:bold;
+            letter-spacing:8px;
+            background:#f8f9fa;
+            padding:20px;
+            border-radius:10px;
+            color:#ff5f6d;
+          ">
+            ${otp}
+          </div>
+
+          <p>
+            OTP expires in 5 minutes
+          </p>
+
+          <small>
+            Ignore if not requested
+          </small>
+
+        </div>
+      </div>
+      `
+    });
+
+    res.json({
+      success: true,
+      message: "OTP sent"
+    });
+
+  } catch (err) {
+
+    console.log(err);
+
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+
+  }
+});
 
 app.post("/api/verify-otp", async (req, res) => {
 
