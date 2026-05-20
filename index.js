@@ -103,6 +103,82 @@ app.post("/api/assistant", async (req, res) => {
   }
 });
 
+app.post("/api/v2/assistant", async (req, res) => {
+  try {
+    const { prompt } = req.body;
+
+    const r = await fetch(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: prompt }],
+          stream: true,
+        }),
+      }
+    );
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      buffer += decoder.decode(value, {
+        stream: true,
+      });
+
+      let lines = buffer.split("\n");
+
+      buffer = lines.pop(); // keep incomplete chunk
+
+      for (let line of lines) {
+        if (!line.startsWith("data: ")) continue;
+
+        const data = line.replace("data: ", "").trim();
+
+        if (data === "[DONE]") {
+          res.end();
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(data);
+
+          const token =
+            parsed.choices?.[0]?.delta?.content;
+
+          if (token) {
+            res.write(token);
+          }
+        } catch (err) {
+          console.log("Parse error:", err);
+        }
+      }
+    }
+
+    res.end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: err.message,
+    });
+  }
+});
+
 
 
 // Register User
@@ -175,6 +251,55 @@ app.post("/api/v2/register", async (req, res) => {
   } catch (err) {
     console.error("Register error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+app.post("/api/logout", async (req, res) => {
+  try {
+    const { email, remaining } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        error: "Email required"
+      });
+    }
+
+    const userRef = db
+      .ref("users")
+      .child(email.replace(/\./g, "_"));
+
+    const snapshot = await userRef.get();
+
+    if (!snapshot.exists()) {
+      return res.status(404).json({
+        error: "User not found"
+      });
+    }
+
+    // convert remaining seconds → minutes
+    const remainingMinutes =
+      Math.max(
+        Math.ceil((remaining || 0) / 60),
+        0
+      )-1;
+
+    await userRef.update({
+      timer: remainingMinutes,
+      expiryTime: null,
+      disabled: remainingMinutes <= 0
+    });
+
+    res.json({
+      success: true,
+      message: "Logout successful",
+      remainingMinutes
+    });
+
+  } catch(err){
+    console.error(err);
+
+    res.status(500).json({
+      error: err.message
+    });
   }
 });
 
