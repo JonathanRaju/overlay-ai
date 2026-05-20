@@ -323,7 +323,7 @@ app.post("/api/login", async (req, res) => {
 
     const user = snapshot.val();
 
-    if (user.disabled) return res.status(403).json({ error: "User is disabled" });
+    if (user.disabled) return res.status(403).json({ error: "User is disabled, please buy minutes to use application" });
     if (user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
 
     // Set expiry
