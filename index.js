@@ -217,7 +217,7 @@ app.post("/api/register", async (req, res) => {
 
 app.post("/api/v2/register", async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, password, techStack, experience, projects, role } = req.body;
+    const { firstName, lastName, email, phone, password, techStack, experience, projects, role,codingLanguages } = req.body;
 
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
@@ -240,6 +240,7 @@ app.post("/api/v2/register", async (req, res) => {
       experience, 
       projects, 
       role,
+      codingLanguages,
       timer,
       disabled: false,
       isAdmin: false,
