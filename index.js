@@ -5,6 +5,9 @@ import cors from 'cors';
 import db from "./firebase.js";  // import db
 import path from "path";
 import { fileURLToPath } from "url";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 
 
@@ -20,6 +23,10 @@ const upload = multer({ storage: multer.memoryStorage() });
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 if (!OPENAI_KEY) {
   console.error('Missing OPENAI_API_KEY in environment');
+}
+
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000);
 }
 
 // 1) Transcription endpoint
@@ -91,7 +98,7 @@ app.post("/api/assistant", async (req, res) => {
             if (token) {
               res.write(token); // flush token immediately
             }
-          } catch {}
+          } catch { }
         }
       });
     }
@@ -217,7 +224,7 @@ app.post("/api/register", async (req, res) => {
 
 app.post("/api/v2/register", async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, password, techStack, experience, projects, role,codingLanguages } = req.body;
+    const { firstName, lastName, email, phone, password, techStack, experience, projects, role, codingLanguages } = req.body;
 
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
@@ -227,18 +234,18 @@ app.post("/api/v2/register", async (req, res) => {
     if (snapshot.exists()) {
       return res.status(400).json({ error: "User already exists" });
     }
-    
+
     let timer = 2; // default 1 hour
 
     const userData = {
-      firstName, 
-      lastName, 
-      email, 
-      phone, 
-      password, 
-      techStack, 
-      experience, 
-      projects, 
+      firstName,
+      lastName,
+      email,
+      phone,
+      password,
+      techStack,
+      experience,
+      projects,
       role,
       codingLanguages,
       timer,
@@ -281,7 +288,7 @@ app.post("/api/logout", async (req, res) => {
       Math.max(
         Math.ceil((remaining || 0) / 60),
         0
-      )-1;
+      ) - 1;
 
     await userRef.update({
       timer: remainingMinutes,
@@ -295,7 +302,7 @@ app.post("/api/logout", async (req, res) => {
       remainingMinutes
     });
 
-  } catch(err){
+  } catch (err) {
     console.error(err);
 
     res.status(500).json({
@@ -333,8 +340,8 @@ app.post("/api/login", async (req, res) => {
     });
     // Auto disable after timer expires
     setTimeout(async () => {
-      if(user.isAdmin == false || !user.isAdmin)
-      await userRef.update({ disabled: true });
+      if (user.isAdmin == false || !user.isAdmin)
+        await userRef.update({ disabled: true });
       console.log(`User ${email} disabled after ${user.timer} mins`);
     }, user.timer * 60 * 1000);
 
@@ -354,11 +361,11 @@ app.get("/api/download/:os", (req, res) => {
     if (os === "windows") {
       filePath = path.join(__dirname, "files", "overlay-ai.exe");
       fileName = "overlay-ai.exe";
-    } 
+    }
     else if (os === "mac") {
       filePath = path.join(__dirname, "files", "myapp.dmg");
       fileName = "myapp.dmg";
-    } 
+    }
     else {
       return res.status(400).json({
         success: false,
@@ -433,7 +440,236 @@ app.post("/api/disable-user", async (req, res) => {
   }
 });
 
+app.post("/send-otp",
+  async (req, res) => {
 
+    try {
+
+      const { email, name } =
+        req.body;
+
+
+      const otp =
+        Math.floor(
+          100000 +
+          Math.random() * 900000
+        ).toString();
+
+
+      // save otp in firebase
+
+      await db
+        .ref("otp")
+        .child(
+          email.replace(/\./g, "_")
+        )
+        .set({
+
+          otp,
+
+          createdAt:
+            Date.now()
+
+        });
+
+
+
+      await resend.emails.send({
+
+        from:
+          "Krack-AI OTP <validate@verify.krack-ai.com>",
+
+        to:
+          email,
+
+        subject:
+          "Your OTP Verification",
+
+        html: `<div style="font-family: Arial, sans-serif; background:#f4f4f4; padding:40px;">
+  <div style="
+      max-width:500px;
+      margin:auto;
+      background:white;
+      padding:30px;
+      border-radius:12px;
+      box-shadow:0 4px 12px rgba(0,0,0,0.1);
+      text-align:center;
+  ">
+    
+    <h2 style="color:#333;">
+      Verify Your Email
+    </h2>
+
+    <p style="color:#666; font-size:16px;">
+      Use the OTP below to complete your verification.
+    </p>
+
+    <div style="
+        font-size:32px;
+        font-weight:bold;
+        letter-spacing:8px;
+        background:#f8f9fa;
+        padding:20px;
+        border-radius:10px;
+        margin:20px 0;
+        color:#ff5f6d;
+    ">
+      ${otp}
+    </div>
+
+    <p style="color:#888;">
+      This OTP will expire in <strong>5 minutes</strong>.
+    </p>
+
+    <p style="font-size:14px;color:#999;margin-top:25px;">
+      If you didn't request this verification, ignore this email.
+    </p>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:25px 0;">
+
+    <p style="font-size:12px;color:#aaa;">
+      © ${new Date().getFullYear()} Your App Name
+    </p>
+
+  </div>
+</div>
+`
+
+      });
+
+
+      res.json({
+
+        success: true,
+
+        message:
+          "OTP sent"
+
+      });
+
+
+    } catch (err) {
+
+      console.log(err);
+
+      res.status(500).json({
+
+        success: false,
+
+        message:
+          err.message
+
+      });
+
+    }
+
+  });
+
+app.post("/verify-otp", async (req, res) => {
+
+  try {
+
+    const { email, otp } =
+      req.body;
+
+    if (
+      !email ||
+      !otp
+    ) {
+
+      return res.status(400).json({
+        success: false,
+        message: "Email & OTP required"
+      });
+
+    }
+
+
+    const otpRef =
+      db
+        .ref("otp")
+        .child(
+          email.replace(/\./g, "_")
+        );
+
+
+    const snapshot =
+      await otpRef.get();
+
+
+    if (
+      !snapshot.exists()
+    ) {
+
+      return res.status(400).json({
+        success: false,
+        message: "OTP not found"
+      });
+
+    }
+
+
+    const savedOtp =
+      snapshot.val();
+
+
+    // expiry check (5 mins)
+
+    const expired =
+      Date.now() -
+      savedOtp.createdAt >
+      5 * 60 * 1000;
+
+
+    if (expired) {
+
+      await otpRef.remove();
+
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired"
+      });
+
+    }
+
+
+    if (
+      savedOtp.otp !== otp
+    ) {
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP"
+      });
+
+    }
+
+
+    // delete OTP after success
+
+    await otpRef.remove();
+
+
+    res.json({
+      success: true,
+      message:
+        "OTP verified"
+    });
+
+  }
+  catch (err) {
+
+    console.log(err);
+
+    res.status(500).json({
+      success: false,
+      message:
+        err.message
+    });
+
+  }
+
+});
 
 
 
