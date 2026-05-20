@@ -440,7 +440,7 @@ app.post("/api/disable-user", async (req, res) => {
   }
 });
 
-app.post("/send-otp",
+app.post("/api/send-otp",
   async (req, res) => {
 
     try {
@@ -565,7 +565,7 @@ app.post("/send-otp",
 
   });
 
-app.post("/verify-otp", async (req, res) => {
+app.post("/api/verify-otp", async (req, res) => {
 
   try {
 
