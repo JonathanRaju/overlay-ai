@@ -10,7 +10,7 @@ import { Cashfree, CFEnvironment } from "cashfree-pg";
 
 dotenv.config();
 
-console.log(process.env.CASHFREE_APP_ID)
+// console.log(process.env.CASHFREE_APP_ID)
 Cashfree.XClientId = process.env.CASHFREE_APP_ID;
 
 Cashfree.XClientSecret = process.env.CASHFREE_SECRET_KEY;
@@ -245,7 +245,7 @@ app.post("/api/v2/register", async (req, res) => {
       return res.status(400).json({ error: "User already exists" });
     }
 
-    let timer = 2; // default 1 hour
+    let timer = 3; 
 
     const userData = {
       firstName,
