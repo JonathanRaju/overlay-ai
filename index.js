@@ -1047,25 +1047,7 @@ app.get(
             paymentStatus==="PAID"
            ){
            
-            if(
-             payment.status
-             ===
-             "SUCCESS"
-            ){
-           
-              return res.json({
-           
-                success:true,
-           
-                status:"PAID",
-           
-                timer:
-                users[userKey]
-                .timer
-           
-              });
-           
-            }
+
            
             const users =
             (
@@ -1112,6 +1094,25 @@ app.get(
              });
            
             }
+            if(
+              payment.status
+              ===
+              "SUCCESS"
+             ){
+            
+               return res.json({
+            
+                 success:true,
+            
+                 status:"PAID",
+            
+                 timer:
+                 users[userKey]
+                 .timer
+            
+               });
+            
+             }
            
            
             let addMinutes=0;
