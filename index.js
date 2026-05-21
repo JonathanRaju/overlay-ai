@@ -6,6 +6,17 @@ import db from "./firebase.js";  // import db
 import path from "path";
 import { fileURLToPath } from "url";
 import { Resend } from "resend";
+import { Cashfree, CFEnvironment } from "cashfree-pg";
+
+dotenv.config();
+
+console.log(process.env.CASHFREE_APP_ID)
+Cashfree.XClientId = process.env.CASHFREE_APP_ID;
+
+Cashfree.XClientSecret = process.env.CASHFREE_SECRET_KEY;
+
+Cashfree.XEnvironment = CFEnvironment.PRODUCTION;
+
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -14,7 +25,6 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -830,6 +840,580 @@ app.put(
     }
 
   });
+
+app.post(
+  "/api/create-payment",
+
+  async (req, res) => {
+
+    try {
+
+      const {
+        email,
+        phone,
+        amount,
+        plan
+      }
+        =
+        req.body;
+
+
+      if (
+        !email ||
+        !amount
+      ) {
+
+        return res
+          .status(400)
+          .json({
+
+            success: false,
+
+            message:
+              "Email & amount required"
+
+          });
+
+      }
+
+
+      const orderId =
+        "ORDER_" +
+        Date.now();
+
+
+      const request = {
+
+        order_amount:
+          Number(amount),
+
+        order_currency:
+          "INR",
+
+        order_id:
+          orderId,
+
+        customer_details: {
+
+          customer_id:
+          email.replace(
+            /[^a-zA-Z0-9]/g,
+            "_"
+          ),
+
+          customer_email: email,
+
+          customer_phone: phone,
+
+        },
+
+        order_meta: {
+
+          return_url:
+
+            `httpa://www.krack-ai.com/?order_id={order_id}`
+
+        }
+
+      };
+
+      const cashfree = new Cashfree(
+        CFEnvironment.PRODUCTION,
+        process.env.CASHFREE_APP_ID,
+        process.env.CASHFREE_SECRET_KEY
+      )
+      const response = await cashfree.PGCreateOrder(request);
+
+      const userKey =
+          email.replace(
+          /\./g,
+          "_"
+          );
+      
+      await db
+      .ref(
+       `users/${userKey}/payments/${orderId}`
+      )
+      .set({
+
+        orderId,
+       
+        email,
+       
+        amount,
+       
+        plan,
+       
+        status:"PENDING",
+       
+        createdAt:
+        Date.now()
+       
+       });
+
+        console.log(
+          JSON.stringify(
+            response.data,
+            null,
+            2
+          )
+         );
+
+
+      res.json({
+
+        success: true,
+
+        orderId,
+
+        paymentSessionId:
+
+          response.data
+            .payment_session_id
+
+      });
+
+    }
+    catch (err) {
+
+      console.log(err);
+
+      res.status(500)
+        .json({
+
+          success: false,
+
+          error:
+            err.message
+
+        });
+
+    }
+
+  });
+
+app.get(
+
+  "/api/verify-payment/:orderId",
+
+  async (req, res) => {
+
+    try {
+
+      const {
+
+        orderId
+
+      }
+        =
+        req.params;
+
+        const cashfree = new Cashfree(
+          CFEnvironment.PRODUCTION,
+          process.env.CASHFREE_APP_ID,
+          process.env.CASHFREE_SECRET_KEY
+        )
+      const response =
+
+        await cashfree
+          .PGFetchOrder(
+
+            orderId
+
+          );
+
+          console.log(
+            JSON.stringify(
+             response.data,
+             null,
+             2
+            )
+           );
+
+
+      const paymentStatus =
+
+        response.data
+          .order_status;
+
+
+          if(
+            paymentStatus==="PAID"
+           ){
+           
+            if(
+             payment.status
+             ===
+             "SUCCESS"
+            ){
+           
+              return res.json({
+           
+                success:true,
+           
+                status:"PAID",
+           
+                timer:
+                users[userKey]
+                .timer
+           
+              });
+           
+            }
+           
+            const users =
+            (
+             await db.ref(
+              "users"
+             ).get()
+            ).val();
+           
+           
+            let payment;
+            let userKey;
+           
+            for(
+             let key in users
+            ){
+           
+              if(
+               users[key]
+               ?.payments
+               ?.[orderId]
+              ){
+           
+                payment=
+                users[key]
+                .payments
+                [orderId];
+           
+                userKey=
+                key;
+           
+                break;
+              }
+           
+            }
+           
+           
+            if(
+             !payment
+            ){
+           
+             return res.json({
+              error:
+              "Payment not found"
+             });
+           
+            }
+           
+           
+            let addMinutes=0;
+           
+           
+            switch(
+            Number(
+             payment.amount
+            )
+            ){
+           
+             case 99:
+              addMinutes=15;
+              break;
+           
+             case 149:
+              addMinutes=30;
+              break;
+           
+             case 299:
+              addMinutes=60;
+              break;
+           
+            }
+           
+           
+            await db
+            .ref(
+             `users/${userKey}`
+            )
+            .update({
+           
+              timer:
+              (
+               users[userKey]
+               .timer || 0
+              )
+              +
+              addMinutes,
+           
+              disabled:false
+           
+            });
+           
+           
+            await db
+            .ref(
+             `users/${userKey}/payments/${orderId}`
+            )
+            .update({
+           
+              status:
+              "SUCCESS"
+           
+            });
+           
+           }
+
+
+      res.json({
+
+        success: true,
+
+        status:
+
+          paymentStatus
+
+      });
+
+    }
+    catch (err) {
+
+      res.status(500)
+        .json({
+
+          error:
+            err.message
+
+        });
+
+    }
+
+  });
+
+// app.post(
+
+//   "/api/payment-webhook",
+
+//   async (req, res) => {
+
+//     try {
+
+//       const event =
+//         req.body;
+
+
+//       if (
+
+//         event.type
+//         ===
+
+//         "PAYMENT_SUCCESS"
+
+//       ) {
+
+//         const orderId = event.data
+//             .order
+//             .order_id;
+
+
+//             const userKey =
+//             payment.email
+//             .replace(
+//             /\./g,
+//             "_"
+//             );
+            
+//             const paymentRef =
+//             db.ref(
+//              `users/${userKey}/payments/${orderId}`
+//             );
+
+
+//         const snap =
+//           await paymentRef.get();
+
+
+//         if (
+//           !snap.exists()
+//         ) {
+
+//           return res
+//             .sendStatus(200);
+
+//         }
+
+
+//         const payment =
+//           snap.val();
+
+
+//         const userRef =
+
+//           db.ref("users")
+//             .child(
+
+//               payment.email
+//                 .replace(
+//                   /\./g,
+//                   "_"
+
+//                 )
+
+//             );
+
+
+//         let addMinutes = 0;
+
+
+//         switch (
+//         payment.amount
+//         ) {
+
+//           case 99:
+
+//             addMinutes = 15;
+//             break;
+
+
+//           case 149:
+
+//             addMinutes = 30;
+//             break;
+
+
+//           case 299:
+
+//             addMinutes = 60;
+//             break;
+
+//         }
+
+
+//         const user =
+
+//           (
+//             await userRef.get()
+//           )
+//             .val();
+
+
+//         await userRef.update({
+
+//           timer:
+
+//             (
+//               user.timer
+//               ||
+//               0
+//             )
+
+//             +
+
+//             addMinutes,
+
+//           disabled: false
+
+//         });
+
+
+//         await paymentRef.update({
+
+//           status:
+//             "SUCCESS"
+
+//         });
+
+//       }
+
+
+//       res.sendStatus(
+//         200
+//       );
+
+//     }
+//     catch (err) {
+
+//       console.log(err);
+
+//       res.sendStatus(
+//         500
+//       );
+
+//     }
+
+// });
+
+app.get(
+
+  "/api/payments/:email",
+
+  async (req, res) => {
+
+    try {
+
+      const {
+        email
+      }
+        =
+        req.params;
+
+
+        const userKey =
+          email.replace(
+          /\./g,
+          "_"
+          );
+        
+      const snapshot =
+        await db
+        .ref(
+         `users/${userKey}/payments`
+        )
+        .get();
+
+
+      const data =
+        snapshot.val()
+        ||
+        {};
+
+
+      const payments =
+
+        Object.values(
+          data
+        )
+
+          .filter(
+
+            x =>
+
+              x.email
+              ===
+
+              email
+
+          );
+
+
+      res.json(
+        payments
+      );
+
+    }
+    catch (err) {
+
+      res.status(500)
+        .json({
+
+          error:
+            err.message
+
+        });
+
+    }
+
+});
 
 
 
