@@ -298,12 +298,12 @@ app.post("/api/v2/login", async (req, res) => {
 
     const user = snapshot.val();
 
-    // disabled account check
-    if (user.disabled) {
-      return res
-        .status(403)
-        .json({ error: "Account disabled" });
-    }
+    // // disabled account check
+    // if (user.disabled) {
+    //   return res
+    //     .status(403)
+    //     .json({ error: "Account disabled" });
+    // }
 
     // password check
     if (user.password !== password) {
