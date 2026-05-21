@@ -903,7 +903,13 @@ app.post(
 
           customer_email: email,
 
-          customer_phone: phone,
+          customer_phone: String(
+            phone
+           )
+           .replace(
+            /^0+/,
+            ""
+           ),
 
         },
 
