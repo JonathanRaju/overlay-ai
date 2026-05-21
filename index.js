@@ -1047,8 +1047,6 @@ app.get(
             paymentStatus==="PAID"
            ){
            
-
-           
             const users =
             (
              await db.ref(
@@ -1060,6 +1058,7 @@ app.get(
             let payment;
             let userKey;
            
+           
             for(
              let key in users
             ){
@@ -1070,12 +1069,13 @@ app.get(
                ?.[orderId]
               ){
            
-                payment=
+                payment =
                 users[key]
-                .payments
-                [orderId];
+                .payments[
+                 orderId
+                ];
            
-                userKey=
+                userKey =
                 key;
            
                 break;
@@ -1089,39 +1089,45 @@ app.get(
             ){
            
              return res.json({
-              error:
-              "Payment not found"
+           
+               error:
+               "Payment not found"
+           
              });
            
             }
+           
+           
+            // Prevent duplicate timer addition
             if(
-              payment.status
-              ===
-              "SUCCESS"
-             ){
-            
-               return res.json({
-            
-                 success:true,
-            
-                 status:"PAID",
-            
-                 timer:
-                 users[userKey]
-                 .timer
-            
-               });
-            
-             }
+             payment.status
+             ===
+             "SUCCESS"
+            ){
+           
+              return res.json({
+           
+               success:true,
+           
+               status:"PAID",
+           
+               timer:
+               users[userKey]
+               .timer
+           
+              });
+           
+            }
            
            
-            let addMinutes=0;
+            let addMinutes =
+            0;
            
            
             switch(
-            Number(
-             payment.amount
-            )
+             Number(
+              payment.amount
+             )
             ){
            
              case 99:
@@ -1148,24 +1154,50 @@ app.get(
               timer:
               (
                users[userKey]
-               .timer || 0
+               .timer
+               || 0
               )
               +
               addMinutes,
            
-              disabled:false
+              disabled:
+              false
            
             });
            
            
             await db
             .ref(
-             `users/${userKey}/payments/${orderId}`
+            `users/${userKey}/payments/${orderId}`
             )
             .update({
            
               status:
               "SUCCESS"
+           
+            });
+           
+           
+            const updatedUser =
+            (
+              await db
+              .ref(
+               `users/${userKey}`
+              )
+              .get()
+            )
+            .val();
+           
+           
+            return res.json({
+           
+              success:true,
+           
+              status:"PAID",
+           
+              timer:
+              updatedUser
+              .timer
            
             });
            
