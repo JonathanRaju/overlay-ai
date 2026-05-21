@@ -261,6 +261,75 @@ app.post("/api/v2/register", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.post("/api/v2/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // validation
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ error: "Email and password required" });
+    }
+
+    const userRef = db
+      .ref("users")
+      .child(email.replace(/\./g, "_"));
+
+    const snapshot = await userRef.get();
+
+    // user not found
+    if (!snapshot.exists()) {
+      return res
+        .status(404)
+        .json({ error: "User not found" });
+    }
+
+    const user = snapshot.val();
+
+    // disabled account check
+    if (user.disabled) {
+      return res
+        .status(403)
+        .json({ error: "Account disabled" });
+    }
+
+    // password check
+    if (user.password !== password) {
+      return res
+        .status(401)
+        .json({ error: "Invalid password" });
+    }
+
+    // return only required fields
+    const responseUser = {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+      techStack: user.techStack,
+      experience: user.experience,
+      projects: user.projects,
+      role: user.role,
+      codingLanguages: user.codingLanguages,
+      timer: user.timer,
+    };
+
+    res.json({
+      message: "Login successful",
+      user: responseUser,
+    });
+
+  } catch (err) {
+    console.error("Login error:", err);
+
+    res.status(500).json({
+      error: err.message,
+    });
+  }
+});
+
 app.post("/api/logout", async (req, res) => {
   try {
     const { email, remaining } = req.body;
@@ -647,6 +716,120 @@ app.post("/api/verify-otp", async (req, res) => {
   }
 
 });
+
+app.put(
+  "/api/update-profile",
+
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const {
+
+        email,
+        firstName,
+        lastName,
+        techStack,
+        experience,
+        codingLanguages,
+        projects
+
+      }
+        =
+        req.body;
+
+
+      const userRef =
+        db.ref("users")
+          .child(
+            email.replace(
+              /\./g,
+              "_"
+            )
+          );
+
+
+      await userRef.update({
+
+        firstName,
+        lastName,
+
+        techStack,
+
+        experience,
+
+        codingLanguages,
+
+        projects
+
+      });
+
+
+      const snapshot =
+        await userRef.get();
+
+      const user =
+        snapshot.val();
+
+
+      res.json({
+
+        message:
+          "Updated",
+
+        user: {
+
+          firstName:
+            user.firstName,
+
+          lastName:
+            user.lastName,
+
+          email:
+            user.email,
+
+          phone:
+            user.phone,
+
+          techStack:
+            user.techStack,
+
+          experience:
+            user.experience,
+
+          projects:
+            user.projects,
+
+          role:
+            user.role,
+
+          codingLanguages:
+            user.codingLanguages,
+
+          timer:
+            user.timer
+
+        }
+
+      });
+
+    }
+    catch (err) {
+
+      res.status(500)
+        .json({
+
+          error:
+            err.message
+
+        });
+
+    }
+
+  });
 
 
 
