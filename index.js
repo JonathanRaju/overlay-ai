@@ -420,7 +420,7 @@ app.post("/api/login", async (req, res) => {
     // Auto disable after timer expires
     setTimeout(async () => {
       if (user.isAdmin == false || !user.isAdmin)
-        await userRef.update({ disabled: true });
+        await userRef.update({ disabled: true, timer:0 });
       console.log(`User ${email} disabled after ${user.timer} mins`);
     }, user.timer * 60 * 1000);
 
