@@ -418,11 +418,11 @@ app.post("/api/login", async (req, res) => {
       ...user
     });
     // Auto disable after timer expires
-    setTimeout(async () => {
-      if (user.isAdmin == false || !user.isAdmin)
-        await userRef.update({ disabled: true, timer:0 });
-      console.log(`User ${email} disabled after ${user.timer} mins`);
-    }, user.timer * 60 * 1000);
+    // setTimeout(async () => {
+    //   if (user.isAdmin == false || !user.isAdmin)
+    //     await userRef.update({ disabled: true, timer:0 });
+    //   console.log(`User ${email} disabled after ${user.timer} mins`);
+    // }, user.timer * 60 * 1000);
 
   } catch (err) {
     console.error("Login error:", err);
