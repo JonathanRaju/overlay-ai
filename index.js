@@ -363,7 +363,7 @@ app.post("/api/logout", async (req, res) => {
     }
 
     // convert remaining seconds → minutes
-    const remainingMinutes =
+    const remainingMinutes = remaining == '0' ? '0' :
       Math.max(
         Math.ceil((remaining || 0) / 60),
         0
