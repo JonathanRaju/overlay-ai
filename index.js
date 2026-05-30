@@ -841,6 +841,29 @@ app.put(
 
   });
 
+  app.get("/api/plans", async (req, res) => {
+    try {
+  
+      const snapshot =
+        await db.ref("plans").get();
+  
+      const plans =
+        snapshot.val() || {};
+  
+      res.json(
+        Object.values(plans)
+          .filter(plan => plan.active)
+      );
+  
+    } catch (err) {
+  
+      res.status(500).json({
+        error: err.message
+      });
+  
+    }
+  });
+
 app.post(
   "/api/create-payment",
 
@@ -851,16 +874,14 @@ app.post(
       const {
         email,
         phone,
-        amount,
-        plan
+        planId
       }
         =
         req.body;
 
 
       if (
-        !email ||
-        !amount
+        !email 
       ) {
 
         return res
@@ -870,11 +891,26 @@ app.post(
             success: false,
 
             message:
-              "Email & amount required"
+              "Email required"
 
           });
 
       }
+
+      const planSnap =
+        await db
+          .ref(`plans/${planId}`)
+          .get();
+
+      if (!planSnap.exists()) {
+        return res.status(400).json({
+          error: "Invalid plan"
+        });
+      }
+
+      const plan = planSnap.val();
+
+      const amount = plan.amount;
 
 
       const orderId =
@@ -936,26 +972,23 @@ app.post(
           "_"
           );
       
-      await db
-      .ref(
-       `users/${userKey}/payments/${orderId}`
-      )
-      .set({
-
-        orderId,
-       
-        email,
-       
-        amount,
-       
-        plan,
-       
-        status:"PENDING",
-       
-        createdAt:
-        Date.now()
-       
-       });
+          await db
+          .ref(`users/${userKey}/payments/${orderId}`)
+          .set({
+            orderId,
+            email,
+          
+            planId: plan.id,
+            planName: plan.name,
+          
+            amount: plan.amount,
+            minutes: plan.minutes,
+            bonusMinutes: plan.bonusMinutes,
+          
+            status: "PENDING",
+          
+            createdAt: Date.now()
+          });
 
         console.log(
           JSON.stringify(
@@ -1082,6 +1115,31 @@ app.get(
               }
            
             }
+
+            const user = users[userKey];
+
+            const previousSuccessPayments =
+              Object.values(
+                user.payments || {}
+              ).filter(
+                p =>
+                  p.status === "SUCCESS" &&
+                  p.orderId !== orderId
+              );
+
+            const isFirstPayment =
+              previousSuccessPayments.length === 0;
+
+            let creditedMinutes =
+              payment.minutes;
+
+            if (
+              isFirstPayment &&
+              payment.bonusMinutes
+            ) {
+              creditedMinutes +=
+                payment.bonusMinutes;
+            }
            
            
             if(
@@ -1146,36 +1204,31 @@ app.get(
            
            
             await db
-            .ref(
-             `users/${userKey}`
-            )
-            .update({
+              .ref(`users/${userKey}`)
+              .update({
+
+                timer:
+                  (users[userKey].timer || 0)
+                  +
+                  creditedMinutes,
+
+                disabled: false
+              });
            
-              timer:
-              (
-               users[userKey]
-               .timer
-               || 0
+           
+              await db
+              .ref(
+                `users/${userKey}/payments/${orderId}`
               )
-              +
-              addMinutes,
-           
-              disabled:
-              false
-           
-            });
-           
-           
-            await db
-            .ref(
-            `users/${userKey}/payments/${orderId}`
-            )
-            .update({
-           
-              status:
-              "SUCCESS"
-           
-            });
+              .update({
+              
+                status: "SUCCESS",
+              
+                bonusApplied:
+                  isFirstPayment,
+              
+                creditedMinutes
+              });
            
            
             const updatedUser =
