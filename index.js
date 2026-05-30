@@ -222,6 +222,7 @@ app.post("/api/register", async (req, res) => {
       disabled: false,
       isAdmin: false,
       createdAt: Date.now(),
+      
     };
 
     await userRef.set(userData);
@@ -240,12 +241,19 @@ app.post("/api/v2/register", async (req, res) => {
 
     const userRef = db.ref("users").child(email.replace(/\./g, "_")); // Firebase keys can't have '.'
 
+    const timerSnapshot =
+        await db.ref("freeMinsOnRegister").get();
+  
+      const timer =
+      timerSnapshot.val() || '';
+
     const snapshot = await userRef.get();
     if (snapshot.exists()) {
       return res.status(400).json({ error: "User already exists" });
     }
 
-    let timer = 3; 
+    console.log(timer)
+    // let timer = 3; 
 
     const userData = {
       firstName,
@@ -266,7 +274,7 @@ app.post("/api/v2/register", async (req, res) => {
     };
 
     await userRef.set(userData);
-    res.json({ message: "User registered successfully", user: userData });
+    res.json({ message: "User registered successfully", user: {...userData, freeMinsOnRegister: timer} });
   } catch (err) {
     console.error("Register error:", err);
     res.status(500).json({ error: err.message });
