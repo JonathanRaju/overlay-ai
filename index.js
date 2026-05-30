@@ -910,7 +910,8 @@ app.post(
 
       const plan = planSnap.val();
 
-      const amount = plan.amount;
+      const amount =
+      Number(plan.offerPrice);
 
 
       const orderId =
@@ -973,22 +974,30 @@ app.post(
           );
       
           await db
-          .ref(`users/${userKey}/payments/${orderId}`)
-          .set({
-            orderId,
-            email,
-          
-            planId: plan.id,
-            planName: plan.name,
-          
-            amount: plan.amount,
-            minutes: plan.minutes,
-            bonusMinutes: plan.bonusMinutes,
-          
-            status: "PENDING",
-          
-            createdAt: Date.now()
-          });
+            .ref(`users/${userKey}/payments/${orderId}`)
+            .set({
+              orderId,
+              email,
+
+              planId: plan.id,
+              planName: plan.name,
+
+              originalPrice:
+                plan.originalPrice,
+
+              offerPrice:
+                plan.offerPrice,
+
+              minutes:
+                plan.minutes,
+
+              bonusMinutes:
+                plan.bonusMinutes,
+
+              status: "PENDING",
+
+              createdAt: Date.now()
+            });
 
         console.log(
           JSON.stringify(
