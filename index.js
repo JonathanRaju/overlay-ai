@@ -262,6 +262,7 @@ app.post("/api/v2/register", async (req, res) => {
       disabled: false,
       isAdmin: false,
       createdAt: Date.now(),
+      hasUsedFirstPaymentOffer: false,
     };
 
     await userRef.set(userData);
@@ -324,6 +325,7 @@ app.post("/api/v2/login", async (req, res) => {
       role: user.role,
       codingLanguages: user.codingLanguages,
       timer: user.timer,
+      hasUsedFirstPaymentOffer: user.hasUsedFirstPaymentOffer,
     };
 
     res.json({
@@ -1221,7 +1223,9 @@ app.get(
                   +
                   creditedMinutes,
 
-                disabled: false
+                disabled: false,
+                hasUsedFirstPaymentOffer: true,
+                firstPaymentDate: Date.now()
               });
            
            
