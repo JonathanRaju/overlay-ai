@@ -271,6 +271,7 @@ app.post("/api/v2/register", async (req, res) => {
       isAdmin: false,
       createdAt: Date.now(),
       hasUsedFirstPaymentOffer: false,
+      isLoggedIn: false,
     };
 
     await userRef.set(userData);
@@ -415,9 +416,19 @@ app.post("/api/login", async (req, res) => {
     if (user.disabled) return res.status(403).json({ error: "User is disabled, please buy minutes to use application" });
     if (user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
 
+    if (user.isLoggedIn) {
+      return res.status(409).json({
+        error: "User is already logged in on another device"
+      });
+    }
+    
     // Set expiry
     const expiryTime = Date.now() + user.timer * 60 * 1000;
-    await userRef.update({ expiryTime });
+    await userRef.update({ 
+      expiryTime,
+      isLoggedIn: true,
+      loginTime: Date.now()
+     });
 
     res.json({
       message: "Login successful",
