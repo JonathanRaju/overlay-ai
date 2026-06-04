@@ -383,7 +383,8 @@ app.post("/api/logout", async (req, res) => {
     await userRef.update({
       timer: remainingMinutes,
       expiryTime: null,
-      disabled: remainingMinutes <= 0
+      disabled: remainingMinutes <= 0,
+      isLoggedIn: false
     });
 
     res.json({
@@ -421,7 +422,7 @@ app.post("/api/login", async (req, res) => {
         error: "User is already logged in on another device"
       });
     }
-    
+
     // Set expiry
     const expiryTime = Date.now() + user.timer * 60 * 1000;
     await userRef.update({ 
