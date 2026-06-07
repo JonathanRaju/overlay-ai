@@ -7,6 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Resend } from "resend";
 import { Cashfree, CFEnvironment } from "cashfree-pg";
+import bcrypt from 'bcrypt'
+import jwt from "jsonwebtoken"
 
 dotenv.config();
 
@@ -255,12 +257,18 @@ app.post("/api/v2/register", async (req, res) => {
     console.log(timer)
     // let timer = 3; 
 
+    const hashedPassword =
+    await bcrypt.hash(
+      password,
+      10
+    );
+
     const userData = {
       firstName,
       lastName,
       email,
       phone,
-      password,
+      password: hashedPassword,
       techStack,
       experience,
       projects,
@@ -275,6 +283,152 @@ app.post("/api/v2/register", async (req, res) => {
     };
 
     await userRef.set(userData);
+    await resend.emails.send({
+      from:
+        "Krack-AI <welcome@mail.krack-ai.com>",
+    
+      to: email,
+    
+      subject:
+        "🎉 Welcome to Krack-AI",
+    
+      html: `
+      <div style="
+        font-family:Arial,sans-serif;
+        background:#f5f5f5;
+        padding:40px 20px;
+      ">
+    
+        <div style="
+          max-width:600px;
+          margin:auto;
+          background:white;
+          border-radius:16px;
+          overflow:hidden;
+          box-shadow:0 10px 30px rgba(0,0,0,.08);
+        ">
+    
+          <div style="
+            background:linear-gradient(
+              135deg,
+              #ff5f6d,
+              #ffc371
+            );
+            padding:40px;
+            text-align:center;
+            color:white;
+          ">
+    
+            <h1 style="margin:0;">
+              Welcome to Krack-AI 🚀
+            </h1>
+    
+          </div>
+    
+          <div style="padding:40px;">
+    
+            <h2>
+              Hi ${firstName},
+            </h2>
+    
+            <p style="
+              font-size:16px;
+              line-height:1.8;
+              color:#555;
+            ">
+              Thank you for joining Krack-AI.
+              Your account has been created successfully.
+            </p>
+    
+            <div style="
+              margin:30px 0;
+              background:#fff4f4;
+              border:2px dashed #ff5f6d;
+              border-radius:12px;
+              padding:25px;
+              text-align:center;
+            ">
+    
+              <div style="
+                font-size:18px;
+                color:#666;
+                margin-bottom:10px;
+              ">
+                Welcome Bonus
+              </div>
+    
+              <div style="
+                font-size:42px;
+                font-weight:bold;
+                color:#ff5f6d;
+              ">
+                ${timer} Minutes
+              </div>
+    
+              <div style="
+                margin-top:10px;
+                color:#666;
+              ">
+                Added to your account for free
+              </div>
+    
+            </div>
+    
+            <h3>
+              What you can do now:
+            </h3>
+    
+            <ul style="
+              line-height:2;
+              color:#555;
+            ">
+              <li>✅ Practice technical interviews</li>
+              <li>✅ Get AI-powered interview guidance</li>
+              <li>✅ Generate coding solutions instantly</li>
+              <li>✅ Prepare for real interviews confidently</li>
+            </ul>
+    
+            <div style="
+              text-align:center;
+              margin-top:35px;
+            ">
+              <a
+                href="https://krack-ai.com"
+                style="
+                  display:inline-block;
+                  background:linear-gradient(
+                    135deg,
+                    #ff5f6d,
+                    #ffc371
+                  );
+                  color:white;
+                  text-decoration:none;
+                  padding:16px 32px;
+                  border-radius:999px;
+                  font-weight:bold;
+                "
+              >
+                Start Using Krack-AI
+              </a>
+            </div>
+    
+          </div>
+    
+          <div style="
+            background:#fafafa;
+            text-align:center;
+            padding:20px;
+            color:#999;
+            font-size:13px;
+          ">
+            © ${new Date().getFullYear()} Krack-AI
+          </div>
+    
+        </div>
+    
+      </div>
+      `,
+    });
     res.json({ message: "User registered successfully", user: {...userData, freeMinsOnRegister: timer} });
   } catch (err) {
     console.error("Register error:", err);
@@ -316,14 +470,43 @@ app.post("/api/v2/login", async (req, res) => {
     // }
 
     // password check
-    if (user.password !== password) {
-      return res
-        .status(401)
-        .json({ error: "Invalid password" });
+    const isMatch =
+    await bcrypt.compare(
+      password,
+      user.password
+    );
+
+    if (!isMatch) {
+      return res.status(401).json({
+        error: "Invalid credentials",
+      });
     }
 
+  delete user.password;
+
+  const token = jwt.sign(
+    {
+      email: user.email,
+      isAdmin: user.isAdmin || false,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      techStack: user.techStack,
+      experience: user.experience,
+      projects: user.projects,
+      role: user.role,
+      codingLanguages: user.codingLanguages,
+      timer: user.timer,
+      hasUsedFirstPaymentOffer: user.hasUsedFirstPaymentOffer,
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "7d",
+    }
+  );
+
     // return only required fields
-    const responseUser = {
+    let responseUser = {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
@@ -337,10 +520,26 @@ app.post("/api/v2/login", async (req, res) => {
       hasUsedFirstPaymentOffer: user.hasUsedFirstPaymentOffer,
     };
 
-    res.json({
-      message: "Login successful",
-      user: responseUser,
-    });
+    if(user.isAdmin === true){
+      responseUser.isAdmin = user.isAdmin
+    }
+
+    res
+.cookie(
+  "token",
+  token,
+  {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge:
+      7 * 24 * 60 * 60 * 1000,
+  }
+)
+.json({
+  message: "Login successful",
+  user: responseUser,
+});
 
   } catch (err) {
     console.error("Login error:", err);
@@ -584,7 +783,7 @@ app.post("/api/send-otp", async (req, res) => {
     // Send email
     await resend.emails.send({
       from:
-        "Krack-AI OTP <validate@verify.krack-ai.com>",
+        "Krack-AI OTP <otp@mail.krack-ai.com>",
 
       to: email,
 
@@ -863,28 +1062,28 @@ app.put(
 
   });
 
-  app.get("/api/plans", async (req, res) => {
-    try {
-  
-      const snapshot =
-        await db.ref("plans").get();
-  
-      const plans =
-        snapshot.val() || {};
-  
-      res.json(
-        Object.values(plans)
-          .filter(plan => plan.active)
-      );
-  
-    } catch (err) {
-  
-      res.status(500).json({
-        error: err.message
-      });
-  
-    }
-  });
+app.get("/api/plans", async (req, res) => {
+  try {
+
+    const snapshot =
+      await db.ref("plans").get();
+
+    const plans =
+      snapshot.val() || {};
+
+    res.json(
+      Object.values(plans)
+        .filter(plan => plan.active)
+    );
+
+  } catch (err) {
+
+    res.status(500).json({
+      error: err.message
+    });
+
+  }
+});
 
 app.post(
   "/api/create-payment",
