@@ -470,17 +470,34 @@ app.post("/api/v2/login", async (req, res) => {
     // }
 
     // password check
-    const isMatch =
-    await bcrypt.compare(
-      password,
-      user.password
-    );
+    let isMatch = false;
 
-    if (!isMatch) {
-      return res.status(401).json({
-        error: "Invalid credentials",
-      });
-    }
+if (user.password.startsWith("$2")) {
+  // bcrypt user
+  isMatch = await bcrypt.compare(
+    password,
+    user.password
+  );
+} else {
+  // old plain text user
+  isMatch = password === user.password;
+
+  // upgrade to bcrypt automatically
+  if (isMatch) {
+    const newHash =
+      await bcrypt.hash(password, 10);
+
+    await userRef.update({
+      password: newHash,
+    });
+  }
+}
+
+if (!isMatch) {
+  return res.status(401).json({
+    error: "Invalid credentials",
+  });
+}
 
   delete user.password;
 
