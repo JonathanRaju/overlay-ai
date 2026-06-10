@@ -631,7 +631,32 @@ app.post("/api/login", async (req, res) => {
     const user = snapshot.val();
 
     if (user.disabled) return res.status(403).json({ error: "User is disabled, please buy minutes to use application" });
-    if (user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
+    let isMatch = false;
+
+if (user.password.startsWith("$2")) {
+  // bcrypt password
+  isMatch = await bcrypt.compare(password, user.password);
+} else {
+  // legacy plaintext password
+  isMatch = password === user.password;
+
+  // auto-upgrade to bcrypt
+  if (isMatch) {
+    const newHash = await bcrypt.hash(password, 10);
+
+    await userRef.update({
+      password: newHash,
+    });
+
+    user.password = newHash;
+  }
+}
+
+if (!isMatch) {
+  return res.status(401).json({
+    error: "Invalid credentials",
+  });
+}
 
     if (user.isLoggedIn) {
       return res.status(409).json({
@@ -639,22 +664,27 @@ app.post("/api/login", async (req, res) => {
       });
     }
 
+    delete user.password;
+
+
     // Set expiry
     const expiryTime = Date.now() + user.timer * 60 * 1000;
-    await userRef.update({ 
-      expiryTime,
-      isLoggedIn: true,
-      loginTime: Date.now()
-     });
 
-    res.json({
-      message: "Login successful",
-      name: `${user.firstname} ${user.lastname}`,
-      timer: user.timer,
-      isAdmin: user.isAdmin || false,
-      expiryTime,
-      ...user
-    });
+await userRef.update({
+  expiryTime,
+  isLoggedIn: true,
+  loginTime: Date.now(),
+});
+
+res.json({
+  message: "Login successful",
+  name: `${user.firstname} ${user.lastname}`,
+  timer: user.timer,
+  isAdmin: user.isAdmin || false,
+  expiryTime,
+  ...user,
+});
+
     // Auto disable after timer expires
     // setTimeout(async () => {
     //   if (user.isAdmin == false || !user.isAdmin)
