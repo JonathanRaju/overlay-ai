@@ -848,7 +848,7 @@ app.post("/api/send-otp", async (req, res) => {
           </p>
 
           <div style="
-            font-size:32px;
+            font-size:28px;
             font-weight:bold;
             letter-spacing:8px;
             background:#f8f9fa;
