@@ -237,7 +237,7 @@ app.post("/api/register", async (req, res) => {
 
 app.post("/api/v2/register", async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, password, techStack, experience, projects, role, codingLanguages } = req.body;
+    const { firstName, lastName, email, phone, password, techStack, experience, projects, role, codingLanguages, referredBy } = req.body;
 
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
@@ -280,6 +280,7 @@ app.post("/api/v2/register", async (req, res) => {
       createdAt: Date.now(),
       hasUsedFirstPaymentOffer: false,
       isLoggedIn: false,
+      referredBy :  referredBy || null
     };
 
     await userRef.set(userData);
@@ -515,6 +516,7 @@ if (!isMatch) {
       codingLanguages: user.codingLanguages,
       timer: user.timer,
       hasUsedFirstPaymentOffer: user.hasUsedFirstPaymentOffer,
+      referrals: user.referrals
     },
     process.env.JWT_SECRET,
     {
@@ -1496,20 +1498,55 @@ app.get(
            
            
               await db
-              .ref(
-                `users/${userKey}/payments/${orderId}`
-              )
-              .update({
-              
-                status: "SUCCESS",
-              
-                bonusApplied:
-                  isFirstPayment,
-              
-                creditedMinutes
-              });
-           
-           
+  .ref(`users/${userKey}/payments/${orderId}`)
+  .update({
+    status: "SUCCESS",
+    bonusApplied: isFirstPayment,
+    creditedMinutes
+  });
+
+
+// REFERRAL REWARD
+if (isFirstPayment && user.referredBy) {
+
+  const referrerKey =
+    user.referredBy.replace(/\./g, "_");
+
+  const referredKey =
+    user.email.replace(/\./g, "_");
+
+  const referralRef =
+    db.ref(
+      `users/${referrerKey}/referrals/${referredKey}`
+    );
+
+  const referralSnap =
+    await referralRef.get();
+
+  if (
+    referralSnap.exists() &&
+    referralSnap.val() === false
+  ) {
+
+    const referrerRef =
+      db.ref(`users/${referrerKey}`);
+
+    const referrerSnap =
+      await referrerRef.get();
+
+    if (referrerSnap.exists()) {
+
+      const referrer =
+        referrerSnap.val();
+
+      await referrerRef.update({
+        timer: Number(referrer.timer || 0) + 10
+      });
+
+      await referralRef.set(true);
+    }
+  }
+}
             const updatedUser =
             (
               await db
@@ -1784,6 +1821,474 @@ app.get(
 
     }
 
+});
+
+//referral api
+app.post("/api/referral", async (req, res) => {
+  try {
+    const { referrerEmail, referredEmail } = req.body;
+
+    if (!referrerEmail || !referredEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "Both emails are required"
+      });
+    }
+
+    if (
+      referrerEmail.toLowerCase() ===
+      referredEmail.toLowerCase()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot refer yourself"
+      });
+    }
+
+    const referrerKey =
+      referrerEmail.replace(/\./g, "_");
+
+    const referredKey =
+      referredEmail.replace(/\./g, "_");
+
+    // 1. Check referrer exists
+    const referrerRef =
+      db.ref(`users/${referrerKey}`);
+
+    const referrerSnap =
+      await referrerRef.get();
+
+    if (!referrerSnap.exists()) {
+      return res.status(404).json({
+        success: false,
+        message: "Referrer not found"
+      });
+    }
+
+    const referrer = referrerSnap.val();
+
+    // 2. Referrer must have purchased
+    const payments =
+      Object.values(referrer.payments || {});
+
+    const hasPurchased =
+      payments.some(
+        payment => payment.status === "SUCCESS"
+      );
+
+    if (!hasPurchased) {
+      return res.status(403).json({
+        success: false,
+        message: "Purchase a plan before referring friends"
+      });
+    }
+
+    // 3. CHECK IF FRIEND ALREADY EXISTS
+    const referredUserRef =
+      db.ref(`users/${referredKey}`);
+
+    const referredUserSnap =
+      await referredUserRef.get();
+
+    if (referredUserSnap.exists()) {
+      return res.status(400).json({
+        success: false,
+        message: "This email is already registered"
+      });
+    }
+
+    // 4. Add referral to A
+    await db
+      .ref(
+        `users/${referrerKey}/referrals/${referredKey}`
+      )
+      .set(false);
+
+    // 5. Send email ONLY if B doesn't exist
+    const referralLink =
+      `https://krack-ai.com/register?ref=${encodeURIComponent(
+        referrerEmail
+      )}`;
+
+    await resend.emails.send({
+      from: "Krack-AI <welcome@mail.krack-ai.com>",
+      to: referredEmail,
+      subject: "🎁 You have been invited to Krack-AI",
+      html: `
+        <div style="font-family:Arial;padding:40px">
+          <h2>You've been invited to Krack-AI 🚀</h2>
+
+          <p>
+            Your friend has invited you to try Krack-AI.
+          </p>
+
+          <a
+            href="${referralLink}"
+            style="
+              display:inline-block;
+              padding:14px 25px;
+              background:#ff5f6d;
+              color:white;
+              text-decoration:none;
+              border-radius:8px;
+            "
+          >
+            Create Your Account
+          </a>
+
+          <p>
+            When you make your first purchase,
+            your friend will receive 10 free minutes.
+          </p>
+        </div>
+      `
+    });
+
+    return res.json({
+      success: true,
+      message: "Referral invitation sent successfully"
+    });
+
+  } catch (err) {
+    console.error("Referral error:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+});
+
+app.post("/api/v2/forgot-password/send-otp", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const userKey = normalizedEmail.replace(/\./g, "_");
+
+    // Check user exists
+    const userRef = db
+      .ref("users")
+      .child(userKey);
+
+    const userSnapshot = await userRef.get();
+
+    if (!userSnapshot.exists()) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email",
+      });
+    }
+
+    const user = userSnapshot.val();
+
+    // Generate OTP
+    const otp = Math.floor(
+      100000 + Math.random() * 900000
+    ).toString();
+
+    // Save OTP
+    await db
+      .ref("passwordResetOtp")
+      .child(userKey)
+      .set({
+        otp,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 5 * 60 * 1000,
+        verified: false,
+      });
+
+    // Send email
+    await resend.emails.send({
+      from: "Krack-AI OTP <otp@mail.krack-ai.com>",
+      to: normalizedEmail,
+      subject: "Reset Your Krack-AI Password",
+      html: `
+        <div style="
+          font-family:Arial;
+          padding:40px;
+          background:#f4f4f4;
+        ">
+          <div style="
+            max-width:500px;
+            margin:auto;
+            background:#fff;
+            padding:30px;
+            border-radius:12px;
+            text-align:center;
+          ">
+
+            <h2>
+              Reset Your Password 🔐
+            </h2>
+
+            <p>
+              Hi ${user.firstName || "there"},
+            </p>
+
+            <p>
+              Use the OTP below to reset your
+              Krack-AI password.
+            </p>
+
+            <div style="
+              font-size:32px;
+              font-weight:bold;
+              letter-spacing:10px;
+              background:#f8f9fa;
+              padding:20px;
+              border-radius:10px;
+              color:#ff5f6d;
+              margin:25px 0;
+            ">
+              ${otp}
+            </div>
+
+            <p>
+              This OTP will expire in
+              <strong>5 minutes</strong>.
+            </p>
+
+            <p style="
+              color:#777;
+              font-size:13px;
+            ">
+              If you didn't request a password reset,
+              you can safely ignore this email.
+            </p>
+
+          </div>
+        </div>
+      `,
+    });
+
+    return res.json({
+      success: true,
+      message: "OTP sent successfully",
+    });
+
+  } catch (err) {
+    console.error(
+      "Forgot password send OTP error:",
+      err
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send OTP",
+    });
+  }
+});
+
+app.post("/api/v2/forgot-password/verify-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Email & OTP required",
+      });
+    }
+
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    const userKey =
+      normalizedEmail.replace(/\./g, "_");
+
+    const otpRef = db
+      .ref("passwordResetOtp")
+      .child(userKey);
+
+    const snapshot = await otpRef.get();
+
+    if (!snapshot.exists()) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP not found or expired",
+      });
+    }
+
+    const savedOtp = snapshot.val();
+
+    // Check expiry
+    if (
+      Date.now() > savedOtp.expiresAt
+    ) {
+      await otpRef.remove();
+
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired",
+      });
+    }
+
+    // Check OTP
+    if (
+      savedOtp.otp !== otp.toString().trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP",
+      });
+    }
+
+    // Mark OTP as verified
+    await otpRef.update({
+      verified: true,
+      verifiedAt: Date.now(),
+    });
+
+    return res.json({
+      success: true,
+      message: "OTP verified successfully",
+    });
+
+  } catch (err) {
+    console.error(
+      "Forgot password verify OTP error:",
+      err
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "OTP verification failed",
+    });
+  }
+});
+
+app.post("/api/v2/forgot-password/reset", async (req, res) => {
+  try {
+    const {
+      email,
+      otp,
+      password,
+    } = req.body;
+
+    if (!email || !otp || !password) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Email, OTP and password are required",
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Password must be at least 8 characters",
+      });
+    }
+
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    const userKey =
+      normalizedEmail.replace(/\./g, "_");
+
+    // Get reset OTP
+    const otpRef = db
+      .ref("passwordResetOtp")
+      .child(userKey);
+
+    const otpSnapshot = await otpRef.get();
+
+    if (!otpSnapshot.exists()) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Password reset session expired",
+      });
+    }
+
+    const savedOtp = otpSnapshot.val();
+
+    // Check expiry
+    if (
+      Date.now() > savedOtp.expiresAt
+    ) {
+      await otpRef.remove();
+
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired",
+      });
+    }
+
+    // Check OTP
+    if (
+      savedOtp.otp !== otp.toString().trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP",
+      });
+    }
+
+    // OTP must be verified first
+    if (!savedOtp.verified) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please verify OTP first",
+      });
+    }
+
+    // Check user
+    const userRef = db
+      .ref("users")
+      .child(userKey);
+
+    const userSnapshot =
+      await userRef.get();
+
+    if (!userSnapshot.exists()) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Hash new password
+    const hashedPassword =
+      await bcrypt.hash(password, 10);
+
+    // Update password
+    await userRef.update({
+      password: hashedPassword,
+    });
+
+    // Delete OTP after successful reset
+    await otpRef.remove();
+
+    return res.json({
+      success: true,
+      message:
+        "Password reset successfully",
+    });
+
+  } catch (err) {
+    console.error(
+      "Reset password error:",
+      err
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to reset password",
+    });
+  }
 });
 
 
