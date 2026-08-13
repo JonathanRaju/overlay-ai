@@ -1906,7 +1906,7 @@ app.post("/api/referral", async (req, res) => {
 
     // 5. Send email ONLY if B doesn't exist
     const referralLink =
-      `https://krack-ai.com/register?ref=${encodeURIComponent(
+      `https://krack-ai.com/?ref=${encodeURIComponent(
         referrerEmail
       )}`;
 
