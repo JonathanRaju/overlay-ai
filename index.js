@@ -440,6 +440,7 @@ app.post("/api/v2/register", async (req, res) => {
 app.post("/api/v2/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log("Login attempt for:", email, password);
 
     // validation
     if (!email || !password) {
@@ -747,22 +748,124 @@ app.get("/api/download/:os", (req, res) => {
 app.get("/api/users", async (req, res) => {
   try {
     const snapshot = await db.ref("users").get();
+
     if (!snapshot.exists()) {
-      return res.status(404).json({ error: "No users found" });
+      return res.status(404).json({
+        success: false,
+        message: "No users found",
+      });
     }
 
     const users = snapshot.val();
 
-    // Convert object to array with email as id
-    const userList = Object.keys(users).map((key) => ({
-      id: key.replace(/_/g, "."),
-      ...users[key],
-    }));
+    const userList = Object.keys(users).map((key) => {
+      const user = users[key];
 
-    res.json({ users: userList });
+      const payments = Object.values(user.payments || {});
+
+      // Successful payments
+      const successfulPayments = payments.filter(
+        (payment) => payment.status === "SUCCESS"
+      );
+
+      // Pending payments
+      const pendingPayments = payments.filter(
+        (payment) => payment.status === "PENDING"
+      );
+
+      // Most recent pending payment
+      const mostRecentPendingPayment =
+        pendingPayments.length > 0
+          ? pendingPayments.sort(
+              (a, b) =>
+                Number(b.createdAt || 0) -
+                Number(a.createdAt || 0)
+            )[0]
+          : null;
+
+      // Total successful payment amount
+      const totalSpent = successfulPayments.reduce(
+        (total, payment) =>
+          total +
+          Number(
+            payment.offerPrice ||
+            payment.amount ||
+            0
+          ),
+        0
+      );
+
+      return {
+        id: key.replace(/_/g, "."),
+
+        // User details
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        email: user.email || "",
+        phone: user.phone || "",
+        role: user.role || "",
+        experience: user.experience || "",
+        techStack: user.techStack || "",
+        codingLanguages: user.codingLanguages || "",
+        projects: user.projects || "",
+
+        // Account details
+        timer: user.timer || 0,
+        disabled: user.disabled || false,
+        isAdmin: user.isAdmin || false,
+        isLoggedIn: user.isLoggedIn || false,
+        createdAt: user.createdAt || null,
+
+        // Successful payment summary
+        paymentCount: successfulPayments.length,
+        totalSpent,
+
+        // Successful payments
+        payments: successfulPayments.map((payment) => ({
+          orderId: payment.orderId,
+          planId: payment.planId,
+          planName: payment.planName,
+          originalPrice: payment.originalPrice,
+          offerPrice: payment.offerPrice,
+          minutes: payment.minutes,
+          bonusMinutes: payment.bonusMinutes,
+          status: payment.status,
+          createdAt: payment.createdAt,
+        })),
+
+        // Pending payment summary
+        pendingPayment: mostRecentPendingPayment
+          ? {
+              orderId: mostRecentPendingPayment.orderId,
+              planId: mostRecentPendingPayment.planId,
+              planName: mostRecentPendingPayment.planName,
+              originalPrice:
+                mostRecentPendingPayment.originalPrice,
+              offerPrice:
+                mostRecentPendingPayment.offerPrice,
+              minutes: mostRecentPendingPayment.minutes,
+              bonusMinutes:
+                mostRecentPendingPayment.bonusMinutes,
+              status: mostRecentPendingPayment.status,
+              createdAt:
+                mostRecentPendingPayment.createdAt,
+            }
+          : null,
+      };
+    });
+
+    return res.json({
+      success: true,
+      users: userList,
+    });
+
   } catch (err) {
     console.error("Get users error:", err);
-    res.status(500).json({ error: err.message });
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 });
 
@@ -888,6 +991,144 @@ app.post("/api/send-otp", async (req, res) => {
       message: err.message
     });
 
+  }
+});
+
+app.post("/api/send-bulk-email", async (req, res) => {
+  try {
+    const { emails, subject, body } = req.body;
+
+    // -----------------------------
+    // VALIDATION
+    // -----------------------------
+
+    if (!Array.isArray(emails) || emails.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one email is required",
+      });
+    }
+
+    if (!subject || !subject.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Subject is required",
+      });
+    }
+
+    if (!body || !body.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Email body is required",
+      });
+    }
+
+    // -----------------------------
+    // CLEAN EMAILS
+    // -----------------------------
+
+    const cleanedEmails = [
+      ...new Set(
+        emails
+          .map((email) => String(email).trim().toLowerCase())
+          .filter(Boolean)
+      ),
+    ];
+
+    // Basic email validation
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    const invalidEmails = cleanedEmails.filter(
+      (email) => !emailRegex.test(email)
+    );
+
+    if (invalidEmails.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email addresses found",
+        invalidEmails,
+      });
+    }
+
+    // -----------------------------
+    // CREATE BATCHES
+    // RESEND SUPPORTS 100 PER BATCH
+    // -----------------------------
+
+    const BATCH_SIZE = 100;
+
+    const batches = [];
+
+    for (
+      let i = 0;
+      i < cleanedEmails.length;
+      i += BATCH_SIZE
+    ) {
+      batches.push(
+        cleanedEmails.slice(i, i + BATCH_SIZE)
+      );
+    }
+
+    // -----------------------------
+    // SEND EMAILS
+    // -----------------------------
+
+    const results = [];
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+
+      const emailsToSend = batch.map((email) => ({
+        from:
+          "Krack-AI <welcome@mail.krack-ai.com>",
+
+        to: [email],
+
+        subject: subject.trim(),
+
+        html: body,
+      }));
+
+      const result = await resend.batch.send(
+        emailsToSend,
+        {
+          idempotencyKey:
+            `bulk-email-${Date.now()}-${i}`,
+        }
+      );
+
+      results.push({
+        batch: i + 1,
+        count: batch.length,
+        result,
+      });
+    }
+
+    // -----------------------------
+    // RESPONSE
+    // -----------------------------
+
+    return res.json({
+      success: true,
+      message: "Emails sent successfully",
+      totalEmails: cleanedEmails.length,
+      batches: batches.length,
+      results,
+    });
+
+  } catch (err) {
+    console.error(
+      "Bulk email error:",
+      err
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        err?.message ||
+        "Failed to send emails",
+    });
   }
 });
 
@@ -1955,6 +2196,55 @@ app.post("/api/referral", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: err.message
+    });
+  }
+});
+
+// Get referrals for a user
+app.post("/api/referrals", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    const userKey = email.replace(/\./g, "_");
+
+    const snapshot = await db
+      .ref(`users/${userKey}/referrals`)
+      .get();
+
+    if (!snapshot.exists()) {
+      return res.json({
+        success: true,
+        referrals: [],
+      });
+    }
+
+    const referrals = snapshot.val();
+
+    const referralList = Object.entries(referrals).map(
+      ([referredKey, status]) => ({
+        email: referredKey.replace(/_/g, "."),
+        status: status ? "SUCCESS" : "PENDING",
+        rewarded: status === true,
+      })
+    );
+
+    return res.json({
+      success: true,
+      referrals: referralList,
+    });
+  } catch (err) {
+    console.error("Get referrals error:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
     });
   }
 });
