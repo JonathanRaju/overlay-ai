@@ -440,69 +440,105 @@ app.post("/api/v2/register", async (req, res) => {
 app.post("/api/v2/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    console.log("Login attempt for:", email, password);
 
-    // validation
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ error: "Email and password required" });
+      return res.status(400).json({
+        error: "Email and password required"
+      });
     }
 
-    const userRef = db
+    // Normalize email
+    const normalizedEmail = email.trim().toLowerCase();
+
+    console.log("Login attempt:", normalizedEmail, password);
+
+    // New standard key
+    const normalizedKey = normalizedEmail.replace(/\./g, "_");
+
+    // Old key - exactly how it was stored previously
+    const oldKey = email.trim().replace(/\./g, "_");
+
+    let userRef = db
       .ref("users")
-      .child(email.replace(/\./g, "_"));
+      .child(normalizedKey);
 
-    const snapshot = await userRef.get();
+    let snapshot = await userRef.get();
 
-    // user not found
+    // -----------------------------------------
+    // BACKWARD COMPATIBILITY
+    // -----------------------------------------
+    // If lowercase user doesn't exist,
+    // try the old uppercase email key.
+    if (!snapshot.exists() && oldKey !== normalizedKey) {
+
+      console.log(
+        "Lowercase user not found. Checking old email key:",
+        oldKey
+      );
+
+      userRef = db
+        .ref("users")
+        .child(oldKey);
+
+      snapshot = await userRef.get();
+    }
+
+    // User still not found
     if (!snapshot.exists()) {
-      return res
-        .status(404)
-        .json({ error: "User not found" });
+      return res.status(404).json({
+        error: "User not found"
+      });
     }
 
     const user = snapshot.val();
 
-    // // disabled account check
-    // if (user.disabled) {
-    //   return res
-    //     .status(403)
-    //     .json({ error: "Account disabled" });
-    // }
+    // -----------------------------------------
+    // PASSWORD CHECK
+    // -----------------------------------------
 
-    // password check
     let isMatch = false;
 
-if (user.password.startsWith("$2")) {
-  // bcrypt user
-  isMatch = await bcrypt.compare(
-    password,
-    user.password
-  );
-} else {
-  // old plain text user
-  isMatch = password === user.password;
+    if (user.password.startsWith("$2")) {
 
-  // upgrade to bcrypt automatically
-  if (isMatch) {
-    const newHash =
-      await bcrypt.hash(password, 10);
+      isMatch = await bcrypt.compare(
+        password,
+        user.password
+      );
 
-    await userRef.update({
-      password: newHash,
-    });
-  }
-}
+    } else {
 
-if (!isMatch) {
-  return res.status(401).json({
-    error: "Invalid credentials",
-  });
-}
+      isMatch = password === user.password;
 
-  delete user.password;
+      // Upgrade old password to bcrypt
+      if (isMatch) {
 
+        const newHash = await bcrypt.hash(
+          password,
+          10
+        );
+
+        await userRef.update({
+          password: newHash
+        });
+
+        user.password = newHash;
+      }
+    }
+
+    if (!isMatch) {
+      return res.status(401).json({
+        error: "Invalid credentials"
+      });
+    }
+
+    // -----------------------------------------
+    // IMPORTANT:
+    // Always return lowercase email
+    // -----------------------------------------
+
+    user.email = user.email?.trim().toLowerCase();
+
+    delete user.password;
   const token = jwt.sign(
     {
       email: user.email,
@@ -625,79 +661,228 @@ app.post("/api/logout", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    console.log("Login attempt for:", email, password);
-    const userRef = db.ref("users").child(email.replace(/\./g, "_"));
-    const snapshot = await userRef.get();
 
-    if (!snapshot.exists()) return res.status(400).json({ error: "User not found" });
-
-    const user = snapshot.val();
-
-    if (user.disabled) return res.status(403).json({ error: "User is disabled, please buy minutes to use application" });
-    let isMatch = false;
-
-if (user.password.startsWith("$2")) {
-  // bcrypt password
-  isMatch = await bcrypt.compare(password, user.password);
-} else {
-  // legacy plaintext password
-  isMatch = password === user.password;
-
-  // auto-upgrade to bcrypt
-  if (isMatch) {
-    const newHash = await bcrypt.hash(password, 10);
-
-    await userRef.update({
-      password: newHash,
-    });
-
-    user.password = newHash;
-  }
-}
-
-if (!isMatch) {
-  return res.status(401).json({
-    error: "Invalid credentials",
-  });
-}
-
-    if (user.isLoggedIn) {
-      return res.status(409).json({
-        error: "User is already logged in on another device"
+    if (!email || !password) {
+      return res.status(400).json({
+        error: "Email and password required",
       });
     }
 
+    // -----------------------------------------
+    // NORMALIZE EMAIL
+    // -----------------------------------------
+    const normalizedEmail = email.trim().toLowerCase();
+
+    console.log("Login attempt in app for:", normalizedEmail, password);
+
+    // New lowercase Firebase key
+    const normalizedKey = normalizedEmail.replace(/\./g, "_");
+
+    // Old Firebase key
+    // This allows existing uppercase users to login
+    const oldKey = email.trim().replace(/\./g, "_");
+
+    // -----------------------------------------
+    // FIND USER
+    // -----------------------------------------
+
+    let userRef = db
+      .ref("users")
+      .child(normalizedKey);
+
+    let snapshot = await userRef.get();
+
+    // -----------------------------------------
+    // BACKWARD COMPATIBILITY
+    // -----------------------------------------
+    // If lowercase user does not exist,
+    // check the old email key.
+    // -----------------------------------------
+
+    if (!snapshot.exists() && oldKey !== normalizedKey) {
+      console.log(
+        "Lowercase user not found. Checking old key:",
+        oldKey
+      );
+
+      userRef = db
+        .ref("users")
+        .child(oldKey);
+
+      snapshot = await userRef.get();
+    }
+
+    // User not found
+    if (!snapshot.exists()) {
+      return res.status(400).json({
+        error: "User not found",
+      });
+    }
+
+    const user = snapshot.val();
+
+    // -----------------------------------------
+    // DISABLED USER CHECK
+    // -----------------------------------------
+
+    if (user.disabled) {
+      return res.status(403).json({
+        error:
+          "User is disabled, please buy minutes to use application",
+      });
+    }
+
+    // -----------------------------------------
+    // PASSWORD CHECK
+    // -----------------------------------------
+
+    let isMatch = false;
+
+    if (user.password.startsWith("$2")) {
+      // bcrypt password
+
+      isMatch = await bcrypt.compare(
+        password,
+        user.password
+      );
+    } else {
+      // legacy plaintext password
+
+      isMatch = password === user.password;
+
+      // Auto-upgrade to bcrypt
+      if (isMatch) {
+        const newHash = await bcrypt.hash(
+          password,
+          10
+        );
+
+        await userRef.update({
+          password: newHash,
+        });
+
+        user.password = newHash;
+      }
+    }
+
+    // Invalid password
+    if (!isMatch) {
+      return res.status(401).json({
+        error: "Invalid credentials",
+      });
+    }
+
+    // -----------------------------------------
+    // CHECK ALREADY LOGGED IN
+    // -----------------------------------------
+
+    if (user.isLoggedIn) {
+      return res.status(409).json({
+        error:
+          "User is already logged in on another device",
+      });
+    }
+
+    // -----------------------------------------
+    // MIGRATE OLD USER TO LOWERCASE KEY
+    // -----------------------------------------
+    // Example:
+    //
+    // Old:
+    // John_Doe@gmail_com
+    //
+    // New:
+    // john_doe@gmail_com
+    //
+    // This happens only after successful login.
+    // -----------------------------------------
+
+    if (
+      oldKey !== normalizedKey &&
+      user.email
+    ) {
+      const newUserRef = db
+        .ref("users")
+        .child(normalizedKey);
+
+      const newSnapshot = await newUserRef.get();
+
+      if (!newSnapshot.exists()) {
+        await newUserRef.set({
+          ...user,
+          email: normalizedEmail,
+        });
+
+        // Remove old uppercase record
+        await userRef.remove();
+
+        // Continue using new Firebase reference
+        userRef = newUserRef;
+
+        console.log(
+          `User migrated to lowercase email: ${normalizedEmail}`
+        );
+      }
+    }
+
+    // -----------------------------------------
+    // ALWAYS RETURN LOWERCASE EMAIL
+    // -----------------------------------------
+
+    user.email = normalizedEmail;
+
+    // Remove password from response
     delete user.password;
 
+    // -----------------------------------------
+    // SET EXPIRY
+    // -----------------------------------------
 
-    // Set expiry
-    const expiryTime = Date.now() + user.timer * 60 * 1000;
+    const expiryTime =
+      Date.now() + user.timer * 60 * 1000;
 
-await userRef.update({
-  expiryTime,
-  isLoggedIn: true,
-  loginTime: Date.now(),
-});
+    await userRef.update({
+      expiryTime,
+      isLoggedIn: true,
+      loginTime: Date.now(),
+    });
 
-res.json({
-  message: "Login successful",
-  name: `${user.firstname} ${user.lastname}`,
-  timer: user.timer,
-  isAdmin: user.isAdmin || false,
-  expiryTime,
-  ...user,
-});
+    // -----------------------------------------
+    // RESPONSE
+    // -----------------------------------------
 
-    // Auto disable after timer expires
+    res.json({
+      message: "Login successful",
+      name: `${user.firstname} ${user.lastname}`,
+      timer: user.timer,
+      isAdmin: user.isAdmin || false,
+      expiryTime,
+      ...user,
+    });
+
+    // -----------------------------------------
+    // AUTO DISABLE AFTER TIMER EXPIRES
+    // -----------------------------------------
+
     // setTimeout(async () => {
-    //   if (user.isAdmin == false || !user.isAdmin)
-    //     await userRef.update({ disabled: true, timer:0 });
-    //   console.log(`User ${email} disabled after ${user.timer} mins`);
+    //   if (user.isAdmin == false || !user.isAdmin) {
+    //     await userRef.update({
+    //       disabled: true,
+    //       timer: 0,
+    //     });
+    //   }
+
+    //   console.log(
+    //     `User ${normalizedEmail} disabled after ${user.timer} mins`
+    //   );
     // }, user.timer * 60 * 1000);
 
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ error: err.message });
+
+    res.status(500).json({
+      error: err.message,
+    });
   }
 });
 
