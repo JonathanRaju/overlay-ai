@@ -205,6 +205,8 @@ app.post("/api/register", async (req, res) => {
   try {
     const { email, phone, firstname, lastname, password, timer } = req.body;
 
+    console.log("register user : ", email, password)
+
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
     const userRef = db.ref("users").child(email.replace(/\./g, "_")); // Firebase keys can't have '.'
@@ -238,6 +240,7 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/v2/register", async (req, res) => {
   try {
     const { firstName, lastName, email, phone, password, techStack, experience, projects, role, codingLanguages, referredBy } = req.body;
+    console.log("register user : ", email, password)
 
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
@@ -1266,7 +1269,7 @@ app.post("/api/send-bulk-email", async (req, res) => {
 
       const emailsToSend = batch.map((email) => ({
         from:
-          "Krack-AI <welcome@mail.krack-ai.com>",
+          "Krack-AI <offers@mail.krack-ai.com>",
 
         to: [email],
 
